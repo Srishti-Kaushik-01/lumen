@@ -58,11 +58,20 @@ class Paper:
 
 
 class QueryProcessor:
-    FOLLOW_UP = re.compile(
-        r"^(?:and\b|also\b|what about\b|how about\b|can you elaborate\b|"
-        r"(?:what|how|why)\b.{0,35}\b(?:it|its|they|their|these|those|this|them)\b)",
-        re.IGNORECASE,
-    )
+    # A follow-up refers back to the topic ("it", "they", "this"), continues it ("and…", "tell me more",
+    # "give an example"), or asks about an aspect without naming any topic ("What are the challenges?").
+    REFERS_BACK = re.compile(r"\b(?:it|its|they|them|their|these|those|this)\b", re.IGNORECASE)
+    CONTINUES = re.compile(
+        r"^(?:and|also|so|then|what about|how about|tell me more|more on|more about|can you elaborate|elaborate|"
+        r"explain (?:more|further|that|in detail)|go on|continue|why|give (?:me )?(?:an? |some )?examples?|"
+        r"any (?:examples?|more))\b", re.IGNORECASE)
+    ASPECTS = {"limitation", "limitations", "challenge", "challenges", "advantage", "advantages", "disadvantage",
+               "disadvantages", "benefit", "benefits", "drawback", "drawbacks", "application", "applications", "use",
+               "uses", "used", "example", "examples", "detail", "details", "more", "why", "work", "works", "working",
+               "pros", "cons", "future", "importance", "important", "purpose", "history", "types", "steps", "simple",
+               "simply", "terms", "briefly", "again", "elaborate", "further"}
+    FILLER = {"example", "examples", "detail", "details", "more", "why", "simple", "simply", "terms", "briefly",
+              "again", "elaborate", "further"}
     GENERIC = {"compare", "describe", "explain", "find", "help", "paper", "papers", "please",
                "research", "show", "studies", "study", "summarize", "tell", "work"}
     COMMON = set("a an and are as at be by can does for from has how in is it its of on or that the "
@@ -92,6 +101,12 @@ class QueryProcessor:
         else:
             tokens = (token for token in re.findall(r"[^\W_]+", value.lower()) if token not in self.COMMON)
         return list(dict.fromkeys(token for token in tokens if len(token) > 1 and token not in self.GENERIC))
+
+    def is_follow_up(self, question):
+        if self.REFERS_BACK.search(question) or self.CONTINUES.search(question.strip()):
+            return True
+        # Nothing left once aspect words are removed: the question has no topic of its own.
+        return not [term for term in self.terms(question) if term not in self.ASPECTS]
 
     def intent(self, question):
         return next((name for name, pattern in self.INTENTS if pattern.search(question.strip())), "general")
@@ -135,19 +150,20 @@ class ConversationContext:
         self.processor = processor
 
     def resolve(self, question, history):
-        if history and self.processor.FOLLOW_UP.search(question):
-            anchor = next((item["question"] for item in reversed(history)
-                           if not self.processor.FOLLOW_UP.search(item["question"])), None)
-            if not anchor:
-                anchor = history[-1]["resolved"].split("\nFollow-up:", 1)[0]
+        if history and self.processor.is_follow_up(question):
+            # The topic of the latest turn: its own question, or the topic it was itself following up.
+            anchor = history[-1]["resolved"].split("\nFollow-up:", 1)[0]
             return f"{anchor[:450]}\nFollow-up: {question}"
         return question
 
     def search_text(self, resolved):
-        # OpenAlex's search is keyword-based. Keep densely relevant terms and
-        # favor the topic over generic follow-up words for candidate generation.
-        anchor = resolved.split("\nFollow-up:", 1)[0]
-        return " ".join(self.processor.terms(anchor)[:7]) or anchor[:160]
+        # OpenAlex's search is keyword-based: the conversation's topic plus what the follow-up adds,
+        # so "How does it compare with fine-tuning?" searches for the topic together with fine-tuning.
+        anchor, _, follow = resolved.partition("\nFollow-up:")
+        topic = self.processor.terms(anchor)
+        extra = [term for term in self.processor.terms(follow)
+                 if term not in topic and term not in self.processor.FILLER][:3]
+        return " ".join(topic[:8 - len(extra)] + extra) or anchor[:160]
 
 
 class HuggingFaceEncoder:
