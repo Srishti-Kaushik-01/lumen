@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/logo.png" type="image/png">
+<title>Lumen — Research Assistant</title>
+<style nonce="{{ nonce }}">
+:root {
+  color-scheme: light;
+  --ink: #211e32;
+  --muted: #625e73;
+  --accent: #5035a1;
+  --wash: #efeafa;
+  --line: #e7e2ef;
+  --surface: #fff;
+  font: 16px/1.55 "Segoe UI", system-ui, sans-serif;
+  color: var(--ink);
+  background: #fcfaff;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input, textarea { font: inherit; color: inherit; }
+button, summary { cursor: pointer; }
+button, a, input, textarea, summary { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+button { border: 0; background: transparent; }
+button:disabled { opacity: .6; cursor: wait; }
+a { color: var(--accent); }
+[hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.layout { min-height: 100vh; display: grid; grid-template-columns: 238px minmax(0, 1fr); }
+.rail { display: flex; flex-direction: column; padding: 24px 16px 18px; border-right: 1px solid var(--line); background: #f7f4fc; }
+.brand { display: flex; gap: 10px; align-items: center; margin: 3px 7px 30px; font-size: 1.22rem; font-weight: 750; letter-spacing: -.03em; }
+.mark { width: 36px; aspect-ratio: 1; display: inline-block; flex-shrink: 0; border-radius: 10px; background: center / contain no-repeat url("/static/logo.png");  }
+.new { display: flex; align-items: center; gap: 9px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; text-align: left; font-weight: 650; }
+.new span { color: var(--accent); font-size: 1.24rem; line-height: 1; }
+.rail h2 { margin: 27px 8px 7px; color: var(--muted); font-size: .85rem; font-weight: 650; }
+.recent { display: grid; gap: 3px; max-height: 62vh; overflow: auto; }
+.recent button { text-align: left; border-radius: 8px; padding: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent button:hover, .recent button[aria-current=true], .new:hover { background: var(--wash); }
+.rail-note { margin: 4px 8px; color: var(--muted); font-size: .88rem; }
+.work { display: flex; flex-direction: column; min-width: 0; background: radial-gradient(ellipse at 57% 0%, #efe8fe 0, #faf7ff 40%, #fff 78%); }
+.top { display: flex; align-items: center; gap: 12px; min-height: 67px; padding: 10px clamp(16px,4vw,38px); border-bottom: 1px solid var(--line); background: #ffffffa0; }
+.top-label { flex: 1; font-size: .91rem; font-weight: 650; }
+.mobile-toggle { display: none; }
+.quiet, .primary { padding: 8px 15px; border-radius: 9px; white-space: nowrap; font-size: .9rem; font-weight: 650; }
+.quiet { background: var(--surface); border: 1px solid var(--line); }
+.quiet:hover { background: var(--wash); }
+.primary { color: #fff; background: var(--accent); }
+.primary:hover { background: #3e2784; }
+.shell { width: min(960px, 100%); margin: 0 auto; padding: 48px 30px 24px; }
+.shell.start { width: min(792px, 100%); padding-top: clamp(70px, 13vh, 142px); }
+.intro { text-align: center; animation: reveal .4s both; }
+.intro .mark { margin-bottom: 17px; width: 46px; border-radius: 14px; box-shadow: 0 8px 20px #5533a72d; }
+h1 { font: 500 clamp(2.2rem, 5vw, 3.9rem)/1.04 Georgia, serif; letter-spacing: -.053em; margin: 0; }
+.intro p { color: var(--muted); margin: 17px auto 28px; max-width: 510px; }
+.composer { box-shadow: 0 15px 55px #4b2b8521; background: var(--surface); border: 1px solid #ded3ef; border-radius: 19px; padding: 15px; }
+.composer:focus-within { border-color: #886dc6; }
+.composer textarea { display: block; width: 100%; resize: vertical; min-height: 81px; max-height: 230px; padding: 5px; border: 0; background: transparent; outline: none; }
+.composer footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.composer small { color: var(--muted); padding-left: 5px; }
+.examples { margin: 20px 0; display: flex; justify-content: center; gap: 9px; flex-wrap: wrap; }
+.example { border: 1px solid var(--line); background: #fff9; border-radius: 999px; padding: 6px 12px; color: var(--accent); font-size: .86rem; }
+.example:hover { background: var(--wash); }
+.status { margin: 12px 0 0; color: var(--muted); min-height: 1.5em; }
+.status.error, .auth-error { color: #8e2456; }
+.thread-heading { display: flex; justify-content: space-between; align-items: start; gap: 10px; margin-bottom: 26px; }
+.thread-heading h1 { font-size: clamp(1.8rem, 4vw, 2.7rem); overflow-wrap: anywhere; }
+.turns { display: grid; gap: 23px; margin-bottom: 22px; }
+.turn { border: 1px solid var(--line); border-radius: 15px; padding: clamp(16px, 3vw, 25px); background: var(--surface); animation: reveal .25s both; }
+.turn h2 { font-size: 1.16rem; line-height: 1.38; margin: 0 0 16px; overflow-wrap: anywhere; }
+.turn h3 { font-size: .94rem; margin: 0 0 6px; }
+.turn p { margin: 0 0 9px; color: var(--muted); overflow-wrap: anywhere; }
+.answer { margin: 0 0 12px; color: var(--ink) !important; font-size: 1.04rem; line-height: 1.7; }
+.answer-label { display: inline-block; margin-bottom: 6px; color: var(--accent); font-size: .78rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+.overview { font-size: .9rem; }
+.finding { margin-bottom: .65rem; padding-left: .15rem; overflow-wrap: anywhere; }
+.finding-list { padding-left: 1.2rem; margin: 9px 0 15px; }
+.citation { display: inline-flex; color: var(--accent); font-weight: 700; font-size: .8rem; padding: 1px 6px; background: var(--wash); border-radius: 5px; }
+.sources { border-top: 1px solid var(--line); padding-top: 9px; margin-top: 15px; }
+.sources summary { color: var(--accent); font-weight: 650; }
+.source-card { display: grid; padding: 9px 12px; margin-top: 7px; border: 1px solid var(--line); border-radius: 9px; }
+.source-card small { color: var(--muted); }
+.source-card a { overflow-wrap: anywhere; }
+.notice { padding: 8px 10px; background: #f7f4fc; border-radius: 7px; font-size: .9rem; }
+dialog { width: min(420px, calc(100% - 32px)); border: 1px solid var(--line); border-radius: 16px; padding: 22px; box-shadow: 0 20px 70px #2720343a; color: var(--ink); }
+dialog::backdrop { background: #23183260; }
+dialog h2 { margin: 0 0 13px; }
+dialog label, dialog input { display: block; width: 100%; }
+dialog label { margin: 10px 0; font-weight: 650; }
+dialog input { margin-top: 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+dialog footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.link { color: var(--accent); text-decoration: underline; padding: 3px 0; }
+.google { display: block; text-align: center; text-decoration: none; padding: 9px 12px; margin-bottom: 4px; }
+.divider { margin: 10px 0 0; text-align: center; font-size: .9em; opacity: .75; }
+.brand { color: var(--ink); text-decoration: none; }
+.filter { width: 100%; margin: 0 0 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.thread-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.source-card .copy { justify-self: start; margin-top: 4px; color: var(--accent); font-size: .82rem; font-weight: 650; padding: 0; }
+dialog.wide { width: min(560px, calc(100% - 32px)); }
+.profile { display: grid; gap: 2px; margin-bottom: 14px; }
+.profile small { color: var(--muted); }
+.name-form { display: flex; gap: 8px; align-items: end; margin: 0 0 14px; }
+.name-form label { flex: 1; margin: 0; }
+dialog label small { font-weight: 400; color: var(--muted); }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 0 16px; }
+.stats div { border: 1px solid var(--line); border-radius: 10px; padding: 10px; text-align: center; background: #faf8fe; }
+.stats strong { display: block; font-size: 1.45rem; color: var(--accent); }
+.stats span { color: var(--muted); font-size: .82rem; }
+.panel { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+.panel h3 { margin: 0 0 4px; font-size: 1rem; }
+.form-note { margin: 6px 0 0; font-size: .9rem; }
+.form-note.error { color: #8e2456; }
+.danger { color: #8e2456; }
+@keyframes reveal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 730px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .mobile-toggle { display: inline-block; }
+  .rail { display: none; }
+  .rail.open { display: flex; border-right: 0; border-bottom: 1px solid var(--line); }
+  .rail .brand { margin-bottom: 13px; }
+  .recent { max-height: 32vh; }
+  .shell { padding-inline: 15px; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="rail" id="rail" aria-label="Conversation navigation">
+    <a class="brand" href="/"><span class="mark" aria-hidden="true"></span> Lumen</a>
+    <button class="new" id="new"><span aria-hidden="true">+</span> New conversation</button>
+    <h2>Recent conversations</h2>
+    <input class="filter" id="filter" type="search" placeholder="Search conversations" aria-label="Search conversations" hidden>
+    <nav class="recent" id="recent" aria-label="Recent conversations"></nav>
+    <p class="rail-note" id="history-note">Sign in to save your research.</p>
+  </aside>
+  <main class="work">
+    <header class="top">
+      <button class="quiet mobile-toggle" id="mobile" aria-controls="rail" aria-expanded="false">History</button>
+      <div class="top-label">Research assistant</div>
+      <button class="quiet" id="account">Sign in</button>
+    </header>
+    <div class="shell start" id="shell">
+      <section class="intro" id="intro" aria-labelledby="home-title">
+        <span class="mark" aria-hidden="true"></span>
+        <h1 id="home-title">What are you researching?</h1>
+        <p>Ask a question, explore the literature, and follow the evidence with linked citations.</p>
+      </section>
+      <section id="thread" aria-label="Current conversation" hidden>
+        <div class="thread-heading"><h1 id="title"></h1>
+          <div class="thread-actions"><button class="quiet" id="rename">Rename</button><button class="quiet" id="remove">Delete</button></div>
+        </div>
+        <div class="turns" id="turns"></div>
+      </section>
+      <form class="composer" id="composer">
+        <label for="question" class="sr-only">Research question</label>
+        <textarea id="question" placeholder="Ask a research question…" maxlength="700" required></textarea>
+        <footer><small>Scholarly sources</small><button type="submit" class="primary" id="submit">Search literature</button></footer>
+      </form>
+      <p class="status" id="status" role="status" aria-live="polite" hidden></p>
+      <div class="examples" id="examples" aria-label="Example questions">
+        <button class="example" type="button" data-query="How does retrieval-augmented generation work?">Retrieval-augmented generation</button>
+        <button class="example" type="button" data-query="How does Sentence-BERT compare sentence similarity?">Sentence similarity</button>
+        <button class="example" type="button" data-query="How does BEIR evaluate information retrieval?">Retrieval benchmarks</button>
+      </div>
+    </div>
+  </main>
+</div>
+<dialog id="auth" aria-labelledby="auth-title">
+  <h2 id="auth-title">Sign in</h2>
+  <a class="quiet google" id="google" href="/auth/google" hidden>Continue with Google</a>
+  <p class="divider" id="google-divider" hidden>or use your email</p>
+  <form id="auth-form">
+    <label id="name-label" hidden>Name <small>(optional)</small><input id="name" autocomplete="name" maxlength="80"></label>
+    <label>Email<input id="email" type="email" autocomplete="email" required maxlength="254"></label>
+    <label>Password<input id="password" type="password" autocomplete="current-password" required minlength="8" maxlength="128"></label>
+    <p class="auth-error" id="auth-error" role="status" hidden></p>
+    <button class="link" type="button" id="switch-auth">Create an account</button>
+    <footer><button class="quiet" type="button" id="cancel">Cancel</button><button class="primary" id="auth-submit" type="submit">Sign in</button></footer>
+  </form>
+</dialog>
+<dialog id="confirm" aria-labelledby="confirm-title">
+  <h2 id="confirm-title">Delete this conversation?</h2>
+  <p>The conversation and its saved answers will be removed.</p>
+  <form method="dialog"><footer><button class="quiet" value="cancel" autofocus>Cancel</button><button class="primary" value="delete">Delete</button></footer></form>
+</dialog>
+<dialog id="account-panel" class="wide" aria-labelledby="account-title">
+  <h2 id="account-title">Your account</h2>
+  <div class="profile"><strong id="account-name"></strong><span id="account-email"></span><small id="account-meta"></small></div>
+  <form class="name-form" id="name-form">
+    <label>Display name<input id="name-input" maxlength="80" autocomplete="name"></label>
+    <button class="quiet" type="submit">Save name</button>
+  </form>
+  <div class="stats">
+    <div><strong id="stat-conversations">0</strong><span>Conversations</span></div>
+    <div><strong id="stat-questions">0</strong><span>Questions asked</span></div>
+    <div><strong id="stat-sources">0</strong><span>Sources cited</span></div>
+  </div>
+  <form class="panel" id="password-form">
+    <h3 id="password-title">Change password</h3>
+    <label id="current-label">Current password<input id="current-password" type="password" autocomplete="current-password" maxlength="128"></label>
+    <label>New password<input id="new-password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"></label>
+    <p class="form-note" id="password-note" role="status" hidden></p>
+    <footer><span></span><button class="primary" id="password-submit" type="submit">Update password</button></footer>
+  </form>
+  <div class="panel">
+    <h3>Danger zone</h3>
+    <p class="form-note">Deleting your account removes every conversation and saved answer.</p>
+    <footer><button class="quiet danger" type="button" id="delete-account">Delete account…</button><span></span></footer>
+  </div>
+  <footer><button class="quiet" type="button" id="account-close">Close</button><button class="primary" type="button" id="sign-out">Sign out</button></footer>
+</dialog>
+<dialog id="delete-account-dialog" aria-labelledby="delete-account-title">
+  <h2 id="delete-account-title">Delete your account?</h2>
+  <p>This permanently deletes your account and all saved research. Type your email address to confirm.</p>
+  <form id="delete-account-form">
+    <label>Email address<input id="delete-confirm" type="email" required autocomplete="off"></label>
+    <p class="form-note error" id="delete-note" role="status" hidden></p>
+    <footer><button class="quiet" type="button" id="delete-cancel">Cancel</button><button class="primary" type="submit">Delete account</button></footer>
+  </form>
+</dialog>
+<dialog id="rename-dialog" aria-labelledby="rename-title">
+  <h2 id="rename-title">Rename conversation</h2>
+  <form id="rename-form">
+    <label>Title<input id="rename-input" required maxlength="120"></label>
+    <p class="form-note error" id="rename-note" role="status" hidden></p>
+    <footer><button class="quiet" type="button" id="rename-cancel">Cancel</button><button class="primary" type="submit">Save</button></footer>
+  </form>
+</dialog>
+<script nonce="{{ nonce }}">
+class ResearchWorkspace {
+  constructor() {
+    this.el = Object.fromEntries([...document.querySelectorAll("[id]")].map(node => [node.id, node]));
+    this.session = {};
+    this.current = null;
+    this.pending = null;
+    this.busy = false;
+    this.authMode = "login";
+  }
+
+  async api(path, method = "GET", body) {
+    const headers = {Accept: "application/json"};
+    if (method !== "GET") headers["X-CSRF-Token"] = this.session.csrf || "";
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    const response = await fetch(path, {method, headers, body: body === undefined ? undefined : JSON.stringify(body)});
+    if (response.status === 204) return null;
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || "The request failed. Please try again.");
+    return result;
+  }
+
+  node(tag, content, className) {
+    const element = document.createElement(tag);
+    if (content) element.textContent = content;
+    if (className) element.className = className;
+    return element;
+  }
+
+  async start() {
+    const e = this.el;
+    e.composer.addEventListener("submit", event => { event.preventDefault(); this.search(); });
+    e.new.addEventListener("click", () => {
+      if (!this.busy) { this.show(null); e.question.value = ""; this.setStatus(""); this.closeRail(); e.question.focus(); }
+    });
+    e.mobile.addEventListener("click", () => {
+      e.mobile.setAttribute("aria-expanded", String(e.rail.classList.toggle("open")));
+    });
+    e.account.addEventListener("click", () => this.accountAction());
+    e.cancel.addEventListener("click", () => e.auth.close());
+    e["switch-auth"].addEventListener("click", () => this.authView(this.authMode === "login" ? "register" : "login"));
+    e["auth-form"].addEventListener("submit", event => { event.preventDefault(); this.authenticate(); });
+    e.remove.addEventListener("click", () => {
+      if (!this.busy && this.current) { e.confirm.returnValue = ""; e.confirm.showModal(); }
+    });
+    e.confirm.addEventListener("close", () => { if (e.confirm.returnValue === "delete") this.deleteCurrent(); });
+    e.filter.addEventListener("input", () => this.filterHistory());
+    e["account-close"].addEventListener("click", () => e["account-panel"].close());
+    e["sign-out"].addEventListener("click", () => this.signOut());
+    e["name-form"].addEventListener("submit", async event => {
+      event.preventDefault();
+      try { await this.api("/api/account", "PATCH", {name: e["name-input"].value}); await this.openAccount(); this.setStatus("Name saved."); }
+      catch (error) { this.setStatus(error.message, true); }
+    });
+    e["password-form"].addEventListener("submit", event => { event.preventDefault(); this.changePassword(); });
+    e["delete-account"].addEventListener("click", () => {
+      e["delete-account-form"].reset(); e["delete-note"].hidden = true; e["delete-account-dialog"].showModal();
+    });
+    e["delete-cancel"].addEventListener("click", () => e["delete-account-dialog"].close());
+    e["delete-account-form"].addEventListener("submit", event => { event.preventDefault(); this.deleteAccount(); });
+    e.rename.addEventListener("click", () => {
+      if (!this.current) return;
+      e["rename-input"].value = this.current.title; e["rename-note"].hidden = true; e["rename-dialog"].showModal();
+    });
+    e["rename-cancel"].addEventListener("click", () => e["rename-dialog"].close());
+    e["rename-form"].addEventListener("submit", event => { event.preventDefault(); this.renameCurrent(); });
+    for (const button of document.querySelectorAll(".example")) {
+      button.addEventListener("click", () => { e.question.value = button.dataset.query; e.question.focus(); });
+    }
+    try {
+      this.session = await this.api("/api/session");
+      e.google.hidden = e["google-divider"].hidden = !this.session.google;
+      await this.refresh();
+      if (location.hash === "#google-sign-in-failed") {
+        history.replaceState(null, "", "/app");
+        this.setStatus("Google sign-in did not complete. Please try again.", true);
+      }
+    } catch (error) { this.setStatus(error.message, true); }
+  }
+
+  setStatus(text, error = false) {
+    this.el.status.textContent = text;
+    this.el.status.hidden = !text;
+    this.el.status.classList.toggle("error", error);
+  }
+
+  closeRail() {
+    this.el.rail.classList.remove("open");
+    this.el.mobile.setAttribute("aria-expanded", "false");
+  }
+
+  async refresh() {
+    const e = this.el;
+    e.account.textContent = this.session.email ? "Account" : "Sign in";
+    e.recent.replaceChildren();
+    const rows = this.session.email ? await this.api("/api/conversations") : [];
+    e.filter.hidden = rows.length < 2;
+    e["history-note"].hidden = !!rows.length;
+    e["history-note"].textContent = this.session.email ? "Your conversations will appear here." : "Sign in to save your research.";
+    for (const row of rows) {
+      const button = this.node("button", row.title);
+      button.title = row.title;
+      button.setAttribute("aria-current", String(this.current?.id === row.id));
+      button.addEventListener("click", () => this.openConversation(row.id));
+      e.recent.append(button);
+    }
+    this.filterHistory();
+  }
+
+  filterHistory() {
+    const term = this.el.filter.value.trim().toLowerCase();
+    for (const button of this.el.recent.children) {
+      button.hidden = !!term && !button.title.toLowerCase().includes(term);
+    }
+  }
+
+  authView(mode) {
+    this.authMode = mode;
+    const register = mode === "register";
+    this.el["auth-title"].textContent = register ? "Create an account" : "Sign in";
+    this.el["auth-submit"].textContent = register ? "Create account" : "Sign in";
+    this.el["switch-auth"].textContent = register ? "Already have an account? Sign in" : "Create an account";
+    this.el.password.autocomplete = register ? "new-password" : "current-password";
+    this.el["name-label"].hidden = !register;
+    this.el["auth-error"].hidden = true;
+  }
+
+  async accountAction() {
+    if (this.busy) return;
+    if (!this.session.email) {
+      this.authView("login");
+      this.el.auth.showModal();
+      return;
+    }
+    await this.openAccount();
+  }
+
+  async openAccount() {
+    const e = this.el;
+    try {
+      const account = await this.api("/api/account");
+      const methods = [account.has_password ? "Password" : "", ...account.providers.map(name => name[0].toUpperCase() + name.slice(1))];
+      e["account-name"].textContent = account.name || "Your account";
+      e["account-email"].textContent = account.email;
+      e["name-input"].value = account.name;
+      e["account-meta"].textContent = "Member since " + new Date(account.created_at).toLocaleDateString(undefined, {year: "numeric", month: "long", day: "numeric"}) +
+        " · Sign-in: " + methods.filter(Boolean).join(", ");
+      e["stat-conversations"].textContent = account.conversations;
+      e["stat-questions"].textContent = account.questions;
+      e["stat-sources"].textContent = account.sources;
+      e["password-title"].textContent = account.has_password ? "Change password" : "Set a password";
+      e["current-label"].hidden = !account.has_password;
+      e["password-form"].reset();
+      e["password-note"].hidden = true;
+      if (!e["account-panel"].open) e["account-panel"].showModal();
+    } catch (error) { this.setStatus(error.message, true); }
+  }
+
+  async signOut() {
+    try {
+      this.session = await this.api("/api/auth/logout", "POST");
+      this.el["account-panel"].close();
+      this.el.question.value = "";
+      this.pending = null;
+      this.show(null);
+      await this.refresh();
+      this.setStatus("You have signed out.");
+    } catch (error) { this.setStatus(error.message, true); }
+  }
+
+  async changePassword() {
+    const e = this.el;
+    const note = e["password-note"];
+    e["password-submit"].disabled = true;
+    try {
+      await this.api("/api/account/password", "POST", {current: e["current-password"].value, password: e["new-password"].value});
+      await this.openAccount();
+      note.textContent = "Password updated.";
+      note.classList.remove("error");
+    } catch (error) {
+      note.textContent = error.message;
+      note.classList.add("error");
+    } finally { note.hidden = false; e["password-submit"].disabled = false; }
+  }
+
+  async deleteAccount() {
+    const e = this.el;
+    try {
+      this.session = await this.api("/api/account", "DELETE", {confirm: e["delete-confirm"].value.trim().toLowerCase()});
+      e["delete-account-dialog"].close();
+      e["account-panel"].close();
+      this.show(null);
+      await this.refresh();
+      this.setStatus("Your account and saved research have been deleted.");
+    } catch (error) { e["delete-note"].textContent = error.message; e["delete-note"].hidden = false; }
+  }
+
+  async renameCurrent() {
+    const e = this.el;
+    try {
+      const result = await this.api("/api/conversations/" + this.current.id, "PATCH", {title: e["rename-input"].value});
+      this.current.title = result.title;
+      e.title.textContent = result.title;
+      e["rename-dialog"].close();
+      await this.refresh();
+      this.setStatus("Conversation renamed.");
+    } catch (error) { e["rename-note"].textContent = error.message; e["rename-note"].hidden = false; }
+  }
+
+  citationText(source) {
+    return [source.authors, source.year ? "(" + source.year + ")" : ""].filter(Boolean).join(" ") +
+      ". " + source.title + ". " + source.url;
+  }
+
+  async authenticate() {
+    const e = this.el;
+    e["auth-submit"].disabled = true;
+    e["auth-error"].hidden = true;
+    try {
+      const details = {email: e.email.value, password: e.password.value};
+      if (this.authMode === "register") details.name = e.name.value;
+      this.session = await this.api("/api/auth/" + this.authMode, "POST", details);
+      e["auth-form"].reset();
+      e.auth.close();
+      await this.refresh();
+      this.setStatus("");
+    } catch (error) {
+      if (e.auth.open) { e["auth-error"].textContent = error.message; e["auth-error"].hidden = false; }
+      else this.setStatus(error.message, true);
+    } finally { e["auth-submit"].disabled = false; }
+  }
+
+  async openConversation(id) {
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      this.show(await this.api("/api/conversations/" + id));
+      this.closeRail();
+      this.setStatus("");
+      await this.refresh();
+    } catch (error) { this.setStatus(error.message, true); }
+    finally { this.busy = false; }
+  }
+
+  async deleteCurrent() {
+    if (this.busy || !this.current) return;
+    this.busy = true;
+    try {
+      await this.api("/api/conversations/" + this.current.id, "DELETE");
+      this.show(null);
+      await this.refresh();
+      this.setStatus("Conversation deleted.");
+    } catch (error) { this.setStatus(error.message, true); }
+    finally { this.busy = false; }
+  }
+
+  async search() {
+    const e = this.el;
+    const question = e.question.value.trim();
+    if (this.busy || !question) return;
+    if (!this.session.email) { this.accountAction(); return; }
+    this.busy = true;
+    e.submit.disabled = true;
+    this.setStatus("Searching scholarly sources, ranking papers, and writing your answer… this can take up to a minute.");
+    try {
+      if (!this.current) this.show(await this.api("/api/conversations", "POST"));
+      const id = this.current.id;
+      if (this.pending?.conversationId !== id || this.pending.question !== question) {
+        this.pending = {conversationId: id, question, requestId: crypto.randomUUID()};
+      }
+      const result = await this.api("/api/conversations/" + id + "/turns", "POST", {question, request_id: this.pending.requestId});
+      this.pending = null;
+      e.question.value = "";
+      this.show(result);
+      this.setStatus("Answer ready.");
+      e.turns.lastElementChild?.scrollIntoView({block: "nearest"});
+      await this.refresh();
+    } catch (error) { this.setStatus(error.message, true); }
+    finally { this.busy = false; e.submit.disabled = false; }
+  }
+
+  show(conversation) {
+    this.current = conversation;
+    const e = this.el;
+    e.shell.classList.toggle("start", !conversation);
+    e.intro.hidden = e.examples.hidden = !!conversation;
+    e.thread.hidden = !conversation;
+    e.question.placeholder = conversation ? "Ask a follow-up question…" : "Ask a research question…";
+    e.title.textContent = conversation?.title || "";
+    e.turns.replaceChildren();
+    for (const [index, turn] of (conversation?.turns || []).entries()) {
+      e.turns.append(this.renderTurn(turn, index === 0 && conversation.title === turn.question));
+    }
+  }
+
+  citationLink(turn, number, sourceList) {
+    const link = this.node("a", "[" + number + "]", "citation");
+    link.href = "#ref-" + turn.id + "-" + number;
+    link.setAttribute("aria-label", "Open citation " + number);
+    link.addEventListener("click", () => { sourceList.open = true; });
+    return link;
+  }
+
+  renderTurn(turn, repeatHeading) {
+    const {answer} = turn;
+    const article = this.node("article", null, "turn");
+    const sourceList = this.node("details", null, "sources");
+    article.append(this.node("h2", turn.question, repeatHeading ? "sr-only" : ""));
+    if (answer.interpretation) article.append(this.node("p", answer.interpretation, "notice"));
+    const summary = answer.summary || [];
+    if (answer.text) {
+      // A written answer: paragraphs whose [n] markers become links to the numbered sources.
+      article.append(this.node("span", answer.heading || "Answer", "answer-label"));
+      for (const block of answer.text.split(/\n\n+/)) {
+        const paragraph = this.node("p", null, "answer");
+        block.split(/(\[\d+\])/).forEach((piece) => {
+          const match = /^\[(\d+)\]$/.exec(piece);
+          if (match && Number(match[1]) <= answer.sources.length) paragraph.append(this.citationLink(turn, Number(match[1]), sourceList));
+          else if (piece) paragraph.append(piece);
+        });
+        article.append(paragraph);
+      }
+      article.append(this.node("p", answer.overview, "overview"));
+    } else if (summary.length) {
+      // A direct answer first: quoted sentences joined into one paragraph, each with its citation.
+      article.append(this.node("span", answer.heading || "Answer", "answer-label"));
+      const paragraph = this.node("p", null, "answer");
+      for (const statement of summary) {
+        paragraph.append(statement.text + " ", this.citationLink(turn, statement.citation, sourceList), " ");
+      }
+      article.append(paragraph, this.node("p", answer.overview, "overview"));
+    } else {
+      article.append(this.node("h3", "Evidence summary"), this.node("p", answer.overview));
+    }
+    if (answer.findings.length) {
+      if (summary.length || answer.text) article.append(this.node("h3", "Key evidence"));
+      const results = this.node("ul", null, "finding-list");
+      for (const finding of answer.findings) {
+        const item = this.node("li", finding.text + " ", "finding");
+        item.append(this.citationLink(turn, finding.citation, sourceList));
+        results.append(item);
+      }
+      article.append(results);
+    }
+    if (answer.notice) article.append(this.node("p", answer.notice, "notice"));
+    if (answer.sources.length || answer.leads.length) {
+      sourceList.append(this.node("summary", "Sources (" + answer.sources.length + ")" +
+        (answer.leads.length ? " · " + answer.leads.length + " related matches" : "")));
+      answer.sources.forEach((source, index) => sourceList.append(this.sourceCard(source, turn.id, index + 1)));
+      for (const lead of answer.leads) sourceList.append(this.sourceCard(lead, turn.id));
+      article.append(sourceList);
+    }
+    return article;
+  }
+
+  sourceCard(source, turnId, citation) {
+    const card = this.node("div", null, "source-card");
+    if (citation) card.id = "ref-" + turnId + "-" + citation;
+    const link = this.node("a", (citation ? "[" + citation + "] " : "") + source.title);
+    link.href = source.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    card.append(link, this.node("small", [source.authors, source.year, source.provider,
+      citation ? "" : "Related match"].filter(Boolean).join(" · ")));
+    const copy = this.node("button", "Copy citation", "copy");
+    copy.type = "button";
+    copy.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(this.citationText(source)); this.setStatus("Citation copied."); }
+      catch { this.setStatus("Copying is not available in this browser.", true); }
+    });
+    card.append(copy);
+    return card;
+  }
+}
+new ResearchWorkspace().start();
+</script>
+</body>
+</html>
