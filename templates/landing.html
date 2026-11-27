@@ -14,72 +14,79 @@
   --accent: #5035a1;
   --accent-dark: #3e2784;
   --wash: #efeafa;
-  --line: #e7e2ef;
+  --line: #e4dfec;
+  --control: #8a8499;
   --surface: #fff;
+  --page: #fbfafd;
+  --band: #f6f4f9;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --shadow: 0 1px 2px #0000000d, 0 8px 24px #0000000d;
+  --ease: cubic-bezier(.2, 0, 0, 1);
   font: 16px/1.6 "Segoe UI", system-ui, sans-serif;
   color: var(--ink);
-  background: #fcfaff;
+  background: var(--page);
 }
 * { box-sizing: border-box; }
 body { margin: 0; }
 a { color: var(--accent); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
-.wrap { width: min(1120px, 100% - 40px); margin: 0 auto; }
+.wrap { width: min(1120px, 100% - 48px); margin: 0 auto; }
 
 /* Navigation */
-.nav { position: sticky; top: 0; z-index: 2; background: #fcfaffe6; backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
-.nav .wrap { display: flex; align-items: center; gap: 22px; min-height: 66px; }
-.brand { display: flex; gap: 10px; align-items: center; font-size: 1.22rem; font-weight: 750; letter-spacing: -.03em; color: var(--ink); text-decoration: none; margin-right: auto; }
-.mark { width: 36px; aspect-ratio: 1; display: inline-block; flex-shrink: 0; border-radius: 10px; background: center / contain no-repeat url("/static/logo.png");  }
-.nav-links { display: flex; gap: 22px; }
-.nav-links a { color: var(--muted); text-decoration: none; font-weight: 600; font-size: .93rem; }
+.nav { position: sticky; top: 0; z-index: 2; background: #fbfafdeb; backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+.nav .wrap { display: flex; align-items: center; gap: 24px; min-height: 64px; }
+.brand { display: flex; gap: 8px; align-items: center; font-size: 1.2rem; font-weight: 600; letter-spacing: -.02em; color: var(--ink); text-decoration: none; margin-right: auto; }
+.mark { width: 32px; aspect-ratio: 1; display: inline-block; flex-shrink: 0; border-radius: var(--r-md); background: center / contain no-repeat url("/static/logo.png"); }
+.nav-links { display: flex; gap: 24px; }
+.nav-links a { color: var(--muted); text-decoration: none; font-weight: 500; font-size: .94rem; transition: color .15s var(--ease); }
 .nav-links a:hover { color: var(--ink); }
-.button { display: inline-block; padding: 10px 18px; border-radius: 10px; font-weight: 650; font-size: .95rem; text-decoration: none; white-space: nowrap; }
+.button { display: inline-flex; align-items: center; min-height: 40px; padding: 8px 20px; border-radius: var(--r-md); font-weight: 500; font-size: .95rem; text-decoration: none; white-space: nowrap; transition: background-color .15s var(--ease); }
 .button.primary { background: var(--accent); color: #fff; }
 .button.primary:hover { background: var(--accent-dark); }
-.button.quiet { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+.button.quiet { background: var(--surface); color: var(--ink); border: 1px solid var(--control); }
 .button.quiet:hover { background: var(--wash); }
 
 /* Hero */
-.hero { padding: clamp(56px, 10vh, 110px) 0 70px; background: radial-gradient(ellipse at 70% 0%, #efe8fe 0, #faf7ff 45%, #fcfaff 80%); }
-.hero .wrap { display: grid; grid-template-columns: 1.05fr .95fr; gap: 54px; align-items: center; }
-.eyebrow { display: inline-block; color: var(--accent); background: var(--wash); border-radius: 999px; padding: 4px 12px; font-size: .84rem; font-weight: 650; }
-h1 { font: 500 clamp(2.4rem, 5.4vw, 4.1rem)/1.04 Georgia, serif; letter-spacing: -.05em; margin: 18px 0; }
-.lead { color: var(--muted); font-size: 1.12rem; max-width: 520px; margin: 0 0 28px; }
+.hero { padding: clamp(56px, 10vh, 112px) 0 72px; }
+.hero .wrap { display: grid; grid-template-columns: 1.05fr .95fr; gap: 56px; align-items: center; }
+h1 { font: 500 clamp(2.4rem, 5.4vw, 4.1rem)/1.06 Georgia, serif; letter-spacing: -.04em; margin: 0 0 20px; }
+.lead { color: var(--muted); font-size: 1.12rem; max-width: 520px; margin: 0 0 32px; }
 .actions { display: flex; gap: 12px; flex-wrap: wrap; }
-.preview { background: var(--surface); border: 1px solid #ded3ef; border-radius: 19px; padding: 22px; box-shadow: 0 25px 70px #4b2b8526; }
-.preview .question { font: 500 1.3rem/1.25 Georgia, serif; margin: 0 0 14px; }
-.preview .label { display: inline-block; margin-bottom: 4px; color: var(--accent); font-size: .74rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
-.preview .answer { margin: 0 0 14px; font-size: .96rem; line-height: 1.65; }
-.preview .interpretation { margin: 0 0 12px; padding: 6px 10px; background: #f7f4fc; border-radius: 7px; color: var(--muted); font-size: .84rem; }
-.preview ul { margin: 0 0 12px; padding-left: 1.1rem; color: var(--muted); font-size: .94rem; }
+.preview { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 24px; box-shadow: var(--shadow); }
+.preview .question { font: 500 1.3rem/1.3 Georgia, serif; margin: 0 0 16px; }
+.preview .label { display: inline-block; margin-bottom: 4px; color: var(--accent); font-size: .875rem; font-weight: 600; }
+.preview .answer { margin: 0 0 16px; font-size: .96rem; line-height: 1.65; }
+.preview ul { margin: 0 0 12px; padding-left: 20px; color: var(--muted); font-size: .94rem; }
 .preview li { margin-bottom: 8px; }
-.cite { color: var(--accent); background: var(--wash); border-radius: 5px; padding: 1px 6px; font-weight: 700; font-size: .78rem; }
-.preview .source { border: 1px solid var(--line); border-radius: 9px; padding: 8px 11px; font-size: .88rem; }
+.cite { color: var(--accent); background: var(--wash); border-radius: var(--r-sm); padding: 2px 6px; font-weight: 600; font-size: .78rem; font-variant-numeric: tabular-nums; }
+.preview .source { border: 1px solid var(--line); border-radius: var(--r-md); padding: 8px 12px; font-size: .88rem; }
+.preview .source + .source { margin-top: 8px; }
 .preview .source small { display: block; color: var(--muted); }
 
 /* Sections */
-section.band { padding: 76px 0; scroll-margin-top: 66px; }
-section.band.alt { background: #f7f4fc; border-block: 1px solid var(--line); }
-h2 { font: 500 clamp(1.8rem, 3.4vw, 2.5rem)/1.12 Georgia, serif; letter-spacing: -.04em; margin: 0 0 12px; text-align: center; }
+section.band { padding: 80px 0; scroll-margin-top: 64px; }
+section.band.alt { background: var(--band); border-block: 1px solid var(--line); }
+h2 { font: 500 clamp(1.8rem, 3.4vw, 2.5rem)/1.12 Georgia, serif; letter-spacing: -.03em; margin: 0 0 12px; text-align: center; }
 .intro { color: var(--muted); max-width: 640px; margin: 0 auto 40px; text-align: center; }
-.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: 15px; padding: 22px; }
-.card h3 { margin: 10px 0 6px; font-size: 1.05rem; }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 24px; }
+.card h3 { margin: 12px 0 8px; font-size: 1.05rem; font-weight: 600; }
 .card p { margin: 0; color: var(--muted); font-size: .95rem; }
-.icon { width: 38px; aspect-ratio: 1; display: grid; place-items: center; border-radius: 11px; background: var(--wash); color: var(--accent); font-weight: 800; }
+.icon { width: 40px; aspect-ratio: 1; display: grid; place-items: center; border-radius: var(--r-md); background: var(--wash); color: var(--accent); }
 .steps { counter-reset: step; }
-.steps .card::before { counter-increment: step; content: counter(step); display: grid; place-items: center; width: 34px; aspect-ratio: 1; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 750; }
-.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; text-align: center; }
-.stats strong { display: block; font: 500 2.2rem/1.1 Georgia, serif; color: var(--accent); }
+.steps .card::before { counter-increment: step; content: counter(step); display: grid; place-items: center; width: 32px; aspect-ratio: 1; border-radius: 50%; border: 1px solid var(--accent); color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; text-align: center; }
+.stats strong { display: block; font: 500 2.2rem/1.1 Georgia, serif; color: var(--ink); font-variant-numeric: tabular-nums; }
 .stats span { color: var(--muted); font-size: .92rem; }
-.faq { max-width: 760px; margin: 0 auto; display: grid; gap: 10px; }
-.faq details { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; }
-.faq summary { font-weight: 650; cursor: pointer; }
-.faq p { color: var(--muted); margin: 10px 0 0; }
+.faq { max-width: 760px; margin: 0 auto; display: grid; gap: 12px; }
+.faq details { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 20px; }
+.faq summary { font-weight: 500; cursor: pointer; }
+.faq p { color: var(--muted); margin: 12px 0 0; }
 .cta { text-align: center; }
 .cta p { color: var(--muted); margin: 0 0 24px; }
-footer { border-top: 1px solid var(--line); padding: 26px 0; color: var(--muted); font-size: .88rem; }
+footer { border-top: 1px solid var(--line); padding: 24px 0; color: var(--muted); font-size: .88rem; }
 footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
 @media (max-width: 880px) {
@@ -88,8 +95,8 @@ footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wr
   .nav-links { display: none; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .preview { animation: rise .6s both; }
-  @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  .preview { animation: rise .5s var(--ease) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 }
 </style>
 </head>
@@ -110,9 +117,8 @@ footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wr
   <section class="hero" aria-labelledby="hero-title">
     <div class="wrap">
       <div>
-        <span class="eyebrow">Lumen · shedding light on research</span>
         <h1 id="hero-title">Research with evidence you can cite.</h1>
-        <p class="lead">Ask a question in plain English. Lumen searches scholarly literature, ranks papers by meaning with a transformer model, and writes a clear answer with every claim linked to its source.</p>
+        <p class="lead">Ask a question in plain English. Lumen searches scholarly literature, ranks papers by meaning with a transformer model, and writes a clear answer in which every cited statement links to its source.</p>
         <div class="actions">
           <a class="button primary" href="/app">Start researching</a>
           <a class="button quiet" href="#how">See how it works</a>
@@ -133,12 +139,12 @@ footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wr
       <h2 id="features-title">Everything a research session needs</h2>
       <p class="intro">Lumen keeps the trail from question to source intact, so every answer can be checked and cited.</p>
       <div class="grid">
-        <article class="card"><span class="icon" aria-hidden="true">↻</span><h3>Context-aware follow-ups</h3><p>Ask “What are its limitations?” and Lumen remembers the topic you were researching.</p></article>
-        <article class="card"><span class="icon" aria-hidden="true">≈</span><h3>Semantic ranking</h3><p>A pretrained MiniLM transformer and FAISS rank papers by meaning, not just matching keywords.</p></article>
-        <article class="card"><span class="icon" aria-hidden="true">[1]</span><h3>Numbered citations</h3><p>Every finding links to its paper with authors, year, and a DOI or arXiv link.</p></article>
-        <article class="card"><span class="icon" aria-hidden="true">✎</span><h3>Written answers</h3><p>An open-weight language model turns the retrieved papers into a clear explanation suited to your question: a definition, a comparison, or how something works.</p></article>
-        <article class="card"><span class="icon" aria-hidden="true">◷</span><h3>Private history</h3><p>Conversations are saved to your account. Search, rename, reopen, or delete them at any time.</p></article>
-        <article class="card"><span class="icon" aria-hidden="true">G</span><h3>Google sign-in</h3><p>Sign in with your Google account or an email and password. Your data stays private to you.</p></article>
+        <article class="card"><span class="icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 14-5.3L20 9"/><path d="M20 4v5h-5"/><path d="M20 12a8 8 0 0 1-14 5.3L4 15"/><path d="M4 20v-5h5"/></svg></span><h3>Context-aware follow-ups</h3><p>Ask “What are its limitations?” and Lumen links it to the topic you were researching, and shows which topic it used.</p></article>
+        <article class="card"><span class="icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h11M4 18h6"/></svg></span><h3>Semantic ranking</h3><p>A pretrained MiniLM transformer and FAISS rank papers by meaning, not just matching keywords.</p></article>
+        <article class="card"><span class="icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H5v16h3M16 4h3v16h-3"/><path d="M11 9l1.5-1v8"/></svg></span><h3>Numbered citations</h3><p>Every cited statement links to its paper with authors, year, and a DOI or arXiv link. Citations that do not match the paper are removed.</p></article>
+        <article class="card"><span class="icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13 7l4 4"/></svg></span><h3>Written answers</h3><p>An open-weight language model, hosted on Groq with Google Gemini as a backup, turns the retrieved papers into a clear explanation suited to your question: a definition, a comparison, or how something works.</p></article>
+        <article class="card"><span class="icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span><h3>Private history</h3><p>Conversations are saved to your account. Search, rename, reopen, or delete them at any time.</p></article>
+        <article class="card"><span class="icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span><h3>Google sign-in</h3><p>Sign in with your Google account or an email and password. Your data stays private to you.</p></article>
       </div>
     </div>
   </section>
@@ -159,8 +165,8 @@ footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wr
     <div class="wrap stats">
       <div><strong>OpenAlex</strong><span>open index of scholarly works</span></div>
       <div><strong>384-d</strong><span>MiniLM sentence embeddings</span></div>
-      <div><strong>&lt; 1 s</strong><span>median warm answer on a CPU</span></div>
-      <div><strong>100%</strong><span>of findings linked to a source</span></div>
+      <div><strong>&lt; 1 s</strong><span>median paper ranking on a CPU</span></div>
+      <div><strong>100%</strong><span>of quoted evidence linked to its paper</span></div>
     </div>
   </section>
 
@@ -168,10 +174,10 @@ footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wr
     <div class="wrap">
       <h2 id="faq-title">Questions</h2>
       <div class="faq">
-        <details><summary>Where do the answers come from?</summary><p>From abstracts of papers returned by OpenAlex and from a small curated collection. A language model writes the answer from those texts and cites each claim; quoted evidence is shown so you can check it.</p></details>
-        <details><summary>What happens if no paper answers my question?</summary><p>Lumen still answers from general knowledge, but says clearly that no paper supported it and that the answer has no citations.</p></details>
-        <details><summary>Is my research private?</summary><p>Yes. Conversations are stored against your account only. Only a short keyword query is sent to OpenAlex, and you can delete conversations or your whole account.</p></details>
-        <details><summary>Does it need a GPU or a paid API?</summary><p>No. The language model is a compact pretrained transformer that runs on an ordinary CPU, and every service it uses is free.</p></details>
+        <details><summary>Where do the answers come from?</summary><p>From abstracts of papers returned by OpenAlex and from a small curated collection. A language model writes the answer from those texts and cites each statement; each citation is checked against the paper, and quoted evidence is shown so you can check it yourself.</p></details>
+        <details><summary>What happens if no paper answers my question?</summary><p>Lumen does not answer from general knowledge. It says that it found too little relevant evidence and suggests rephrasing the question.</p></details>
+        <details><summary>Is my research private?</summary><p>Conversations are stored against your account only, and you can delete them or your whole account at any time. A short keyword query is sent to OpenAlex. To write the answer, your question, the two previous exchanges, and the paper summaries are sent to the language model service (Groq, or Google Gemini as a backup); your name, email address and password are never sent.</p></details>
+        <details><summary>Does it need a GPU or a paid API?</summary><p>No GPU is needed. Papers are ranked by a compact MiniLM transformer that runs on an ordinary CPU. Answers are written by a hosted language model through the free tiers of Groq and Google Gemini, which need an API key on the server. Without a key, Lumen still answers with quoted evidence.</p></details>
       </div>
     </div>
   </section>

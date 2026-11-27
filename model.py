@@ -61,6 +61,10 @@ class QueryProcessor:
     # A follow-up refers back to the topic ("it", "they", "this"), continues it ("and…", "tell me more",
     # "give an example"), or asks about an aspect without naming any topic ("What are the challenges?").
     REFERS_BACK = re.compile(r"\b(?:it|its|they|them|their|these|those|this)\b", re.IGNORECASE)
+    # "it" that refers to nothing, as in "Is it true that FAISS needs a GPU?", is not a reference to the topic.
+    EXPLETIVE = re.compile(
+        r"\b(?:is it|it is|it's|was it|would it be|can it be)\s+(?:true|possible|necessary|important|better|worth|"
+        r"common|safe|likely|known|correct|the case|fair|reasonable)\b|\bhow is it that\b", re.IGNORECASE)
     CONTINUES = re.compile(
         r"^(?:and|also|so|then|what about|how about|tell me more|more on|more about|can you elaborate|elaborate|"
         r"explain (?:more|further|that|in detail)|go on|continue|why|give (?:me )?(?:an? |some )?examples?|"
@@ -74,8 +78,11 @@ class QueryProcessor:
               "again", "elaborate", "further"}
     GENERIC = {"compare", "describe", "explain", "find", "help", "paper", "papers", "please",
                "research", "show", "studies", "study", "summarize", "tell", "work"}
-    COMMON = set("a an and are as at be by can does for from has how in is it its of on or that the "
-                 "their these they this to was were what when where which who why will with would you".split())
+    # Used only when spaCy cannot be loaded; close to spaCy's own English stop words for question text.
+    COMMON = set("a about also an and any are as at be been being but by can could did do does doing for from "
+                 "get give go had has have how i in into is it its me my of on or our should so some than that the their "
+                 "them then there these they this those to too used using very was we were what when where which "
+                 "who whom why will with would you your".split())
 
     # The synopsis's "NLP Analysis" step: the kind of answer the question asks for.
     INTENTS = (
@@ -103,7 +110,7 @@ class QueryProcessor:
         return list(dict.fromkeys(token for token in tokens if len(token) > 1 and token not in self.GENERIC))
 
     def is_follow_up(self, question):
-        if self.REFERS_BACK.search(question) or self.CONTINUES.search(question.strip()):
+        if self.REFERS_BACK.search(self.EXPLETIVE.sub(" ", question)) or self.CONTINUES.search(question.strip()):
             return True
         # Nothing left once aspect words are removed: the question has no topic of its own.
         return not [term for term in self.terms(question) if term not in self.ASPECTS]
@@ -113,9 +120,15 @@ class QueryProcessor:
 
     @staticmethod
     def acronyms(text):
-        """Abbreviations such as RAG, BERT or FAISS: 2 to 8 characters with at least two capitals."""
+        """Abbreviations such as RAG, BM25 or FAISS: 2 to 8 characters, almost all capitals or digits.
+
+        Mixed-case names such as OpenAlex, PyTorch or GitHub are not abbreviations and are left alone.
+        """
         found = re.findall(r"\b[A-Z][A-Za-z0-9]*[A-Z][A-Za-z0-9]*s?\b", text)
-        return [word for word in dict.fromkeys(found) if 2 <= len(word) <= 8 and sum(c.isupper() for c in word) >= 2]
+        def capitals(word):
+            core = word[:-1] if word.endswith("s") else word
+            return sum(c.isupper() or c.isdigit() for c in core) >= max(2, len(core) - 1)
+        return [word for word in dict.fromkeys(found) if 2 <= len(word) <= 8 and capitals(word)]
 
     @classmethod
     def expansion(cls, acronym, texts):
@@ -149,11 +162,19 @@ class ConversationContext:
     def __init__(self, processor):
         self.processor = processor
 
+    @staticmethod
+    def topic(resolved):
+        """The conversation topic a resolved question carries: its own text, or the topic it follows up."""
+        return resolved.split("\nFollow-up:", 1)[0].strip()
+
     def resolve(self, question, history):
         if history and self.processor.is_follow_up(question):
             # The topic of the latest turn: its own question, or the topic it was itself following up.
-            anchor = history[-1]["resolved"].split("\nFollow-up:", 1)[0]
-            return f"{anchor[:450]}\nFollow-up: {question}"
+            # Earlier turns are searched backwards so that a turn without a stored topic is skipped.
+            anchor = next((self.topic(turn.get("resolved") or turn.get("question") or "")
+                           for turn in reversed(history) if turn.get("resolved") or turn.get("question")), "")
+            if anchor:
+                return f"{anchor[:450]}\nFollow-up: {question}"
         return question
 
     def search_text(self, resolved):
@@ -228,9 +249,27 @@ class HuggingFaceEncoder:
 class OpenAlexSource:
     SELECT = "id,doi,display_name,publication_year,authorships,abstract_inverted_index,is_retracted"
 
+    CACHE_SECONDS = 600
+
     def __init__(self, key=None, timeout=5):
         self.key = key
         self.timeout = timeout
+        self.cache = {}
+        self.cache_lock = Lock()
+
+    def search(self, query):
+        """Search OpenAlex, reusing a result for the same query for ten minutes."""
+        key = query.strip().casefold()
+        with self.cache_lock:
+            hit = self.cache.get(key)
+            if hit and time.monotonic() - hit[0] < self.CACHE_SECONDS:
+                return hit[1]
+        papers = self.fetch(query)
+        with self.cache_lock:
+            if len(self.cache) >= 256:
+                self.cache.pop(next(iter(self.cache)))
+            self.cache[key] = (time.monotonic(), papers)
+        return papers
 
     @staticmethod
     def restore_abstract(index):
@@ -241,7 +280,7 @@ class OpenAlexSource:
                  if isinstance(position, int) and 0 <= position < 1000}
         return " ".join(terms[position] for position in sorted(terms))
 
-    def search(self, query):
+    def fetch(self, query):
         params = urlencode({"search": query, "per-page": 12, "select": self.SELECT})
         headers = {"User-Agent": "BCSP-064 Research Assistant/1.0", "Accept": "application/json"}
         if self.key:
@@ -317,6 +356,9 @@ class LocalCorpus:
 
 
 class SemanticRetriever:
+    # Cosine similarity below which a paper is not treated as evidence for the question.
+    THRESHOLD = 0.30
+
     def __init__(self, encoder, local, external):
         self.encoder = encoder
         self.local = local
@@ -338,19 +380,25 @@ class SemanticRetriever:
         online = []
         if self.external:
             # One retry covers OpenAlex's brief rate limits and slow responses.
+            failed = False
             for attempt in range(2):
                 try:
                     online = self.external.search(query)
+                    failed = False
                     break
                 except (OSError, ValueError, TypeError, AttributeError, KeyError) as error:
+                    failed = True
                     logging.getLogger(__name__).warning("OpenAlex search failed (attempt %d): %s", attempt + 1, error)
-            else:
+                    # Only rate limits, server errors and timeouts are worth a second try.
+                    if isinstance(error, HTTPError) and error.code not in (429, 500, 502, 503, 504):
+                        break
+            if failed:
                 notice = "OpenAlex is temporarily unavailable. Showing matches from the local collection."
         if not self.external:
             notice = "Local collection only."
         local = self.local.search(query)
-        candidates = list(self.distinct([*(paper for paper in online if paper.abstract),
-                                         *local, *(paper for paper in online if not paper.abstract)]))
+        # Only papers with an abstract can be quoted or written from, so only they compete for the top five.
+        candidates = [paper for paper in self.distinct([*online, *local]) if paper.abstract]
         if not candidates:
             return [], notice
         vectors = self.encoder.encode([resolved, *(p.title + ". " + p.abstract for p in candidates)])
@@ -359,7 +407,7 @@ class SemanticRetriever:
         index.add(vectors[1:])
         scores, positions = index.search(vectors[:1], min(5, len(candidates)))
         return [(candidates[pos], float(score)) for pos, score in zip(positions[0], scores[0])
-                if score >= 0.24], notice
+                if score >= self.THRESHOLD], notice
 
 
 class EvidenceComposer:
@@ -464,35 +512,44 @@ class GeminiWriter:
             "that a non-specialist can follow, in formal academic English.\n"
             f"{self.STYLE.get(intent, self.STYLE['general'])}\n"
             "Rules:\n"
-            "- Use the numbered papers below as your evidence. After every sentence that relies on a paper, "
-            "cite it with its number in square brackets, e.g. [1] or [2][3].\n"
-            "- You may add widely accepted background knowledge to make the answer complete, but do not cite "
-            "a paper for anything it does not say, and never invent papers, numbers, or results.\n"
-            "- If the papers do not cover part of the question, say so briefly.\n"
+            "- Use only the numbered papers below as your evidence. End every factual sentence with the number "
+            "of the paper that supports it in square brackets, e.g. [1] or [2][3].\n"
+            "- Do not state facts that the papers do not support, do not cite a paper for anything it does not "
+            "say, and never invent papers, numbers, or results.\n"
+            "- If the papers do not cover part of the question, say so in one short sentence without a citation.\n"
             "- Start directly with the answer. Do not greet the reader, introduce yourself, or restate the question.\n"
             "- Write 2 to 4 short paragraphs (about 120 to 250 words). Plain text only: no headings, no bold, "
             "no markdown. Separate paragraphs with a blank line.\n\n"
             + (f"Earlier in this conversation:\n{earlier}\n\n" if earlier else "")
-            + (f"Papers:\n{evidence}\n\n" if papers else
-               "No relevant papers were found. Answer from general knowledge without any citations, "
-               "and say that no supporting papers were found.\n\n")
+            + f"Papers:\n{evidence}\n\n"
             + f"Question: {question}"
         )
 
-    def write(self, question, history, papers, intent):
+    def deadline(self, limit=None):
+        """This writer's own time limit, shortened to the request's overall budget when one is given."""
+        own = time.monotonic() + self.timeout
+        return min(own, limit) if limit else own
+
+    @staticmethod
+    def remaining(deadline, cap):
+        left = deadline - time.monotonic()
+        if left < 5:
+            raise TimeoutError("no time left in the answer budget")
+        return min(cap, left)
+
+    def write(self, question, history, papers, intent, deadline=None):
         body = json.dumps({
             "contents": [{"role": "user", "parts": [{"text": self.prompt(question, history, papers, intent)}]}],
             "generationConfig": {"temperature": 0.3, "maxOutputTokens": 4000},
         }).encode()
         # Busy or rate-limited responses move on to the next model in the chain.
         attempts = [self.model, *(name for name in self.FALLBACKS if name != self.model)]
-        deadline = time.monotonic() + self.timeout
+        deadline = self.deadline(deadline)
         for number, model in enumerate(attempts):
             request = Request(self.ENDPOINT.format(model=model), data=body, method="POST",
                               headers={"Content-Type": "application/json", "x-goog-api-key": self.key})
-            remaining = deadline - time.monotonic()
             try:
-                with urlopen(request, timeout=max(5, min(25, remaining))) as response:
+                with urlopen(request, timeout=self.remaining(deadline, 25)) as response:
                     payload = json.loads(response.read(1_000_000))
                 break
             except (HTTPError, TimeoutError) as error:
@@ -533,9 +590,9 @@ class GroqWriter(GeminiWriter):
     def __init__(self, key, model=None, timeout=30):
         super().__init__(key, model or os.getenv("GROQ_MODEL") or "openai/gpt-oss-120b", timeout)
 
-    def write(self, question, history, papers, intent):
+    def write(self, question, history, papers, intent, deadline=None):
         prompt = self.prompt(question, history, papers, intent)
-        deadline = time.monotonic() + self.timeout
+        deadline = self.deadline(deadline)
         attempts = [self.model, *(name for name in self.FALLBACKS if name != self.model)]
         for number, model in enumerate(attempts):
             options = {"reasoning_effort": "low", "include_reasoning": False} if model.startswith("openai/") else {}
@@ -544,7 +601,7 @@ class GroqWriter(GeminiWriter):
             request = Request(self.ENDPOINT, data=body, method="POST", headers={
                 "Content-Type": "application/json", "Authorization": f"Bearer {self.key}", "User-Agent": "Lumen/1.0"})
             try:
-                with urlopen(request, timeout=max(5, min(20, deadline - time.monotonic()))) as response:
+                with urlopen(request, timeout=self.remaining(deadline, 20)) as response:
                     payload = json.loads(response.read(1_000_000))
                 break
             except (HTTPError, TimeoutError) as error:
@@ -564,10 +621,10 @@ class WriterChain:
         self.writers = writers
         self.model = " / ".join(writer.model for writer in writers)
 
-    def write(self, question, history, papers, intent):
+    def write(self, question, history, papers, intent, deadline=None):
         for number, writer in enumerate(self.writers):
             try:
-                return writer.write(question, history, papers, intent)
+                return writer.write(question, history, papers, intent, deadline)
             except (OSError, ValueError, KeyError, IndexError) as error:
                 if number == len(self.writers) - 1:
                     raise
@@ -582,6 +639,10 @@ def configured_writer():
     return WriterChain(writers) if writers else None
 
 
+class UnsupportedAnswer(ValueError):
+    """The written answer, once checked, cites none of the supplied papers."""
+
+
 class ResearchAssistant:
     def __init__(self, encoder, external, writer=None):
         processor = QueryProcessor()
@@ -591,6 +652,7 @@ class ResearchAssistant:
         self.context = ConversationContext(processor)
         self.retriever = SemanticRetriever(encoder, LocalCorpus(), external)
         self.composer = EvidenceComposer(processor, encoder)
+        self.expansions = {}
 
     def interpret(self, resolved):
         """Expand abbreviations so that, for example, RAG is searched as retrieval-augmented generation."""
@@ -598,25 +660,50 @@ class ResearchAssistant:
         for acronym in self.processor.acronyms(resolved):
             texts = [paper.title + ". " + paper.abstract for paper in self.retriever.local.search(acronym)]
             expansion = self.processor.expansion(acronym, texts)
-            if not expansion and self.external:
+            if not expansion and acronym in self.expansions:
+                expansion = self.expansions[acronym]
+            elif not expansion and self.external:
                 try:
                     texts = [paper.title + ". " + paper.abstract for paper in self.external.search(acronym)]
                     expansion = self.processor.expansion(acronym, texts)
                 except (OSError, ValueError, TypeError, AttributeError, KeyError):
-                    expansion = ""
+                    expansion = None
+                if expansion is not None:
+                    # Remember the result, including "no expansion", so the abbreviation is looked up only once.
+                    if len(self.expansions) >= 512:
+                        self.expansions.pop(next(iter(self.expansions)), None)
+                    self.expansions[acronym] = expansion
             if expansion and expansion not in resolved.lower():
                 resolved = re.sub(r"\b" + re.escape(acronym) + r"\b", f"{acronym} ({expansion})", resolved, count=1)
                 notes.append(f"{acronym} was read as \u201c{expansion}\u201d.")
         return resolved, " ".join(notes)
 
+    # Total time one answer may take, kept well inside the web server's 120-second worker timeout.
+    BUDGET_SECONDS = 80
+    # Cosine similarity a cited sentence needs with some sentence of the paper it cites.
+    SUPPORT = 0.30
+    # How far below the best-matching paper a cited paper may score and still keep its citation.
+    MARGIN = 0.10
+
     def answer(self, question, history):
-        resolved, interpretation = self.interpret(self.context.resolve(question, history))
+        deadline = time.monotonic() + self.BUDGET_SECONDS
+        contextual = self.context.resolve(question, history)
+        resolved, interpretation = self.interpret(contextual)
+        if contextual != question:
+            # Show the reader which earlier topic the follow-up was linked to.
+            topic = ConversationContext.topic(contextual)
+            linked = f"Read as a follow-up to “{topic[:120]}”."
+            interpretation = " ".join(filter(None, [linked, interpretation]))
         intent = self.processor.intent(question)
         ranked, notice = self.retriever.retrieve(resolved, self.context.search_text(resolved))
         answer = None
-        if self.writer:
+        # With no matching paper there is nothing to cite, so no answer is written from general knowledge.
+        if self.writer and ranked:
             try:
-                answer = self.generate(question, resolved, history, ranked, notice, intent)
+                answer = self.generate(question, resolved, history, ranked, notice, intent, deadline)
+            except UnsupportedAnswer:
+                notice = " ".join(filter(None, [notice, "The written answer could not be supported by the papers, "
+                                                        "so the answer is made of quoted evidence."]))
             except (OSError, ValueError, TypeError, KeyError, IndexError) as error:
                 logging.getLogger(__name__).warning("Answer writer failed: %s", error)
                 notice = " ".join(filter(None, [notice, "The answer writer is temporarily unavailable, "
@@ -626,12 +713,63 @@ class ResearchAssistant:
         answer["interpretation"] = interpretation
         return resolved, answer
 
-    def generate(self, question, resolved, history, ranked, notice, intent):
+    def supported(self, paragraphs, papers):
+        """Remove citation marks whose sentence is not close in meaning to any sentence of the cited paper.
+
+        The writer may cite the wrong paper for a claim; a range check alone would let that through.
+        Returns the checked paragraphs and the number of citation marks removed.
+        """
+        pieces = [self.split(block) for block in paragraphs]
+        claims = [(b, s, int(n)) for b, block in enumerate(pieces) for s, sentence in enumerate(block)
+                  for n in dict.fromkeys(re.findall(r"\[(\d+)\]", sentence))]
+        if not claims:
+            return paragraphs, 0
+        evidence = {number: [text for text in self.processor.sentences(paper.abstract) if len(text) >= 20][:30]
+                    or [paper.title] for number, paper in enumerate(papers, start=1)}
+        sentences = [re.sub(r"\[\d+\]", "", pieces[b][s]) for b, s, _ in claims]
+        flat = [text for number in sorted(evidence) for text in evidence[number]]
+        vectors = self.retriever.encoder.encode([*sentences, *flat])
+        claim_vectors, paper_vectors = vectors[:len(sentences)], vectors[len(sentences):]
+        spans, start = {}, 0
+        for number in sorted(evidence):
+            spans[number] = (start, start + len(evidence[number]))
+            start += len(evidence[number])
+        removed, dropped = 0, set()
+        for (b, s, number), vector in zip(claims, claim_vectors):
+            scores = {other: float((paper_vectors[low:high] @ vector).max()) for other, (low, high) in spans.items()}
+            best = scores.get(number, 0.0)
+            # A citation stands only if its sentence is close to the cited paper, and that paper is the best
+            # or nearly the best match among the supplied papers; otherwise another paper says it better.
+            if best < self.SUPPORT or best < max(scores.values()) - self.MARGIN:
+                pieces[b][s] = re.sub(r"\s*\[" + str(number) + r"\]", "", pieces[b][s])
+                removed += 1
+                if not re.search(r"\[\d+\]", pieces[b][s]):
+                    dropped.add((b, s))  # nothing supports the sentence any more, so it is not shown
+        blocks = [" ".join(text for s, text in enumerate(block) if (b, s) not in dropped)
+                  for b, block in enumerate(pieces)]
+        return [block for block in blocks if block.strip()], removed
+
+    def split(self, paragraph):
+        """Sentences of a written paragraph, with a citation that follows a full stop kept on its sentence."""
+        sentences = []
+        for sentence in self.processor.sentences(paragraph):
+            marks = re.match(r"((?:\s*\[\d+\])+)\s*(.*)", sentence, re.S)
+            if marks and sentences:
+                sentences[-1] += marks.group(1)
+                sentence = marks.group(2)
+            if sentence.strip():
+                sentences.append(sentence.strip())
+        return sentences
+
+    def generate(self, question, resolved, history, ranked, notice, intent, deadline=None):
         papers = [paper for paper, _ in ranked if paper.abstract][:5]
+        if not papers:
+            raise ValueError("no papers to write from")
         question_text = question if resolved == question else f"{question} (context: {resolved.split(chr(10))[0]})"
-        paragraphs = self.writer.write(question_text, history, papers, intent)
+        paragraphs = self.writer.write(question_text, history, papers, intent, deadline)
         if not paragraphs:
             raise ValueError("empty answer")
+        paragraphs, unsupported = self.supported(paragraphs, papers)
         # Keep only the papers the answer cites, numbered in order of first citation.
         order = []
         for number in re.findall(r"\[(\d+)\]", " ".join(paragraphs)):
@@ -641,23 +779,30 @@ class ResearchAssistant:
         paragraphs = [re.sub(r"\[(\d+)\]", lambda m: f"[{renumber[int(m.group(1))]}]" if int(m.group(1)) in renumber
                              else "", block) for block in paragraphs]
         cited = [papers[old - 1] for old in order]
+        if not cited:
+            raise UnsupportedAnswer("the written answer cites none of the papers")
+        # The quote shown for a source is the sentence of that paper closest to the claim that cites it.
+        claim_for = {}
+        for sentence in self.split(" ".join(paragraphs)):
+            for number in re.findall(r"\[(\d+)\]", sentence):
+                claim_for.setdefault(int(number), re.sub(r"\[\d+\]", "", sentence))
         findings = []
         for number, paper in enumerate(cited, start=1):
-            chosen = self.composer.best_sentence(resolved, paper, intent)
+            chosen = self.composer.best_sentence(claim_for.get(number, resolved), paper, intent)
             if chosen and len(chosen[1].split()) >= 10:  # skip linking sentences such as "This is where X steps in."
                 findings.append({"text": chosen[1], "citation": number})
         cited_urls = {paper.url for paper in cited}
-        if cited:
-            overview = (f"Written from {len(cited)} paper{'s' if len(cited) > 1 else ''}. Numbers in brackets link "
-                        "each claim to its source; the key evidence below quotes the papers directly.")
-        else:
-            overview = ("No paper matched this question closely, so this answer is based on general knowledge "
-                        "and has no citations. Check it against a textbook or review article.")
+        overview = (f"Written from {len(cited)} paper{'s' if len(cited) > 1 else ''}. Numbers in brackets link "
+                    "each cited statement to its source; the key evidence below quotes the papers directly.")
+        if unsupported:
+            plural = unsupported > 1
+            overview += (f" {unsupported} citation{'s' if plural else ''} that did not match the cited paper "
+                         f"closely enough {'were' if plural else 'was'} removed.")
         return {"intent": intent, "heading": EvidenceComposer.HEADINGS[intent], "text": "\n\n".join(paragraphs),
                 "overview": overview, "summary": [], "findings": findings,
                 "sources": [paper.reference() for paper in cited],
                 "leads": [paper.reference() for paper, _ in ranked if paper.url not in cited_urls],
-                "notice": notice, "generated": True}
+                "notice": notice, "generated": True, "unsupported_citations_removed": unsupported}
 
 
 if __name__ == "__main__":

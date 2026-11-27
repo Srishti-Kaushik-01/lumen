@@ -6,3 +6,4 @@ faiss-cpu==1.12.0
 onnxruntime==1.24.2
 tokenizers==0.22.2
 spacy==3.8.14
+psycopg_pool==3.2.6

@@ -2,6 +2,7 @@
 
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
@@ -12,7 +13,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from uuid import UUID, uuid4
@@ -41,6 +42,39 @@ try:
     from psycopg.rows import dict_row
 except ImportError:
     psycopg = None
+try:
+    from psycopg_pool import ConnectionPool
+except ImportError:
+    ConnectionPool = None
+
+
+class RateLimiter:
+    """Counts recent requests per key in memory; the app runs as one worker process, so one counter is enough."""
+
+    def __init__(self):
+        self.events = {}
+        self.lock = Lock()
+
+    MAX_KEYS = 10_000
+
+    def under(self, key, limit, seconds):
+        """Whether the key has fewer than `limit` events in the last `seconds`, without recording one."""
+        now = time.monotonic()
+        with self.lock:
+            return sum(now - moment < seconds for moment in self.events.get(key, ())) < limit
+
+    def allow(self, key, limit, seconds):
+        now = time.monotonic()
+        with self.lock:
+            recent = [moment for moment in self.events.pop(key, ()) if now - moment < seconds]
+            allowed = len(recent) < limit
+            if allowed:
+                recent.append(now)
+            # Re-inserting keeps the dictionary in order of last use, so the oldest keys are dropped first.
+            self.events[key] = recent[-100:]
+            while len(self.events) > self.MAX_KEYS:
+                self.events.pop(next(iter(self.events)))
+            return allowed
 
 
 class ResearchRepository:
@@ -78,11 +112,29 @@ class ResearchRepository:
             raise RuntimeError("DATABASE_SCHEMA must be a simple lower-case name.")
         self.ready = False
         self.setup_lock = Lock()
+        self.pool = None
+        if self.postgres and ConnectionPool is not None:
+            # A small pool, one connection per web server thread, avoids a new TLS handshake for every query.
+            # prepare_threshold=None keeps statements unprepared, as Neon's transaction pooler requires.
+            # Neon closes idle connections, so each one is checked before use and retired after four idle minutes.
+            self.pool = ConnectionPool(self.location, min_size=1, max_size=4, open=True, timeout=10, max_idle=240,
+                                       check=ConnectionPool.check_connection,
+                                       kwargs={"row_factory": dict_row, "connect_timeout": 5,
+                                               "prepare_threshold": None})
+
+    @contextmanager
+    def postgres_connection(self):
+        if self.pool is not None:
+            with self.pool.connection() as connection:
+                yield connection
+        else:
+            with psycopg.connect(self.location, row_factory=dict_row, connect_timeout=5) as connection:
+                yield connection
 
     @contextmanager
     def connect(self):
         if self.postgres:
-            with psycopg.connect(self.location, row_factory=dict_row, connect_timeout=5) as connection:
+            with self.postgres_connection() as connection:
                 # Lumen keeps its tables in their own schema so a shared database's other tables are untouched.
                 # SET LOCAL lasts for this transaction only, which is safe behind Neon's connection pooler.
                 if not self.ready:
@@ -122,8 +174,19 @@ class ResearchRepository:
         """Add columns introduced after the first release to databases created earlier."""
         if self.postgres:
             connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT")
-        elif "name" not in [row[1] for row in connection.execute("PRAGMA table_info(users)")]:
+            connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0")
+            return
+        columns = [row[1] for row in connection.execute("PRAGMA table_info(users)")]
+        if "name" not in columns:
             connection.execute("ALTER TABLE users ADD COLUMN name TEXT")
+        if "session_version" not in columns:
+            connection.execute("ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0")
+
+    def session_version(self, owner_id):
+        """The account's sign-in generation; raising it signs out every other browser."""
+        with self.transaction() as connection:
+            row = self.execute(connection, "SELECT session_version FROM users WHERE id = ?", (owner_id,)).fetchone()
+            return row["session_version"] if row else None
 
     @staticmethod
     def now():
@@ -143,24 +206,34 @@ class ResearchRepository:
 
     def user_by_email(self, email):
         with self.transaction() as connection:
-            return self.execute(connection, "SELECT id, email, password_hash FROM users WHERE email = ?",
-                                (email,)).fetchone()
+            return self.execute(connection, """SELECT id, email, password_hash, session_version
+                                FROM users WHERE email = ?""", (email,)).fetchone()
 
     def user_for_identity(self, provider, subject, email, name=""):
-        """Return the account linked to an external identity, creating or linking it on first sign-in."""
+        """Return (id, email, session_version) for an external identity, creating or linking it on first sign-in.
+
+        Email registration does not prove that the person owns the address, but Google has verified it.
+        When Google is first linked to an account that has a password, that password is therefore removed and
+        every other session is ended, so someone who registered the address in advance cannot keep access.
+        """
         with self.transaction() as connection:
             # "!" is not a valid Werkzeug hash, so an account created here has no usable password.
             self.execute(connection, """INSERT INTO users (id, email, password_hash, created_at, name)
                          VALUES (?, ?, '!', ?, ?) ON CONFLICT(email) DO NOTHING""", (uuid4().hex, email, self.now(), name))
             user = self.execute(connection, "SELECT id FROM users WHERE email = ?", (email,)).fetchone()
-            self.execute(connection, """INSERT INTO identities VALUES (?, ?, ?)
-                         ON CONFLICT(provider, subject) DO NOTHING""", (provider, subject, user["id"]))
+            created = self.execute(connection, """INSERT INTO identities VALUES (?, ?, ?)
+                         ON CONFLICT(provider, subject) DO NOTHING""", (provider, subject, user["id"])).rowcount
             linked = self.execute(connection, """SELECT u.id, u.email FROM identities i JOIN users u ON u.id = i.user_id
                     WHERE i.provider = ? AND i.subject = ?""", (provider, subject)).fetchone()
+            if created:
+                self.execute(connection, """UPDATE users SET password_hash = '!', session_version = session_version + 1
+                             WHERE id = ? AND password_hash <> '!'""", (linked["id"],))
             if name:
                 self.execute(connection, "UPDATE users SET name = ? WHERE id = ? AND (name IS NULL OR name = '')",
                              (name, linked["id"]))
-            return linked["id"], linked["email"]
+            version = self.execute(connection, "SELECT session_version FROM users WHERE id = ?",
+                                   (linked["id"],)).fetchone()["session_version"]
+            return linked["id"], linked["email"], version
 
     def account(self, owner_id):
         """Profile details and usage counts for the account page."""
@@ -192,9 +265,16 @@ class ResearchRepository:
             return row["password_hash"] if row else None
 
     def set_password(self, owner_id, password_hash):
+        """Store a new password and end every other session; returns the new session version."""
         with self.transaction() as connection:
-            return self.execute(connection, "UPDATE users SET password_hash = ? WHERE id = ?",
-                                (password_hash, owner_id)).rowcount > 0
+            self.execute(connection, """UPDATE users SET password_hash = ?, session_version = session_version + 1
+                         WHERE id = ?""", (password_hash, owner_id))
+            row = self.execute(connection, "SELECT session_version FROM users WHERE id = ?", (owner_id,)).fetchone()
+            return row["session_version"] if row else None
+
+    def end_sessions(self, owner_id):
+        with self.transaction() as connection:
+            self.execute(connection, "UPDATE users SET session_version = session_version + 1 WHERE id = ?", (owner_id,))
 
     def delete_user(self, owner_id):
         """Delete an account; foreign keys cascade to identities, conversations, turns, and citations."""
@@ -342,6 +422,19 @@ class WorkspaceAPI:
         self.assistant = assistant
         self.google = google
         self.dummy_hash = generate_password_hash(secrets.token_hex(16))
+        self.limiter = RateLimiter()
+
+    def limit(self, name, key, count, seconds):
+        if not current_app.config.get("RATE_LIMITS", True):
+            return
+        if not self.limiter.allow(f"{name}:{key}", count, seconds):
+            abort(429, "Too many requests. Wait a minute and try again.")
+
+    @staticmethod
+    def start_session(user_id, email, version):
+        session.clear()
+        session.permanent = True
+        session.update(user_id=user_id, email=email, version=version)
 
     def register(self, app):
         app.add_url_rule("/", view_func=self.landing)
@@ -380,13 +473,13 @@ class WorkspaceAPI:
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self' 'nonce-" + getattr(request, "csp_nonce", "") +
             "'; style-src 'self' 'nonce-" + getattr(request, "csp_nonce", "") +
-            "'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+            "'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
         )
         if request.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         if current_app.config["SESSION_COOKIE_SECURE"]:
             # Production is served over HTTPS; keep browsers from sending credentials over plain HTTP.
-            response.headers["Strict-Transport-Security"] = "max-age=31536000"
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
     @staticmethod
@@ -404,10 +497,13 @@ class WorkspaceAPI:
             abort(400, "Send a valid JSON object.")
         return data
 
-    @staticmethod
-    def owner():
+    def owner(self):
         if not session.get("user_id"):
             abort(401, "Sign in to access this workspace.")
+        # A password change, a new Google link, or account deletion raises the version and ends this session.
+        if self.repository.session_version(session["user_id"]) != session.get("version", 0):
+            session.clear()
+            abort(401, "Your session has ended. Sign in again.")
         return session["user_id"]
 
     @staticmethod
@@ -452,17 +548,20 @@ class WorkspaceAPI:
         except (OSError, ValueError, KeyError, IndexError, TypeError):
             current_app.logger.exception("Google sign-in failed")
             return redirect(self.GOOGLE_FAILED)
-        user_id, email = self.repository.user_for_identity("google", subject, email, name)
-        session.clear()
-        session.update(user_id=user_id, email=email)
+        user_id, email, version = self.repository.user_for_identity("google", subject, email, name)
+        self.start_session(user_id, email, version)
         return redirect("/app")
 
     def authenticate(self, action):
         if action == "logout":
+            # Signing out ends every session of the account, so a copied cookie stops working too.
+            if session.get("user_id"):
+                self.repository.end_sessions(session["user_id"])
             session.clear()
             return self.session_state()
         if action not in {"register", "login"}:
             abort(404)
+        self.limit("auth-ip", request.remote_addr, 20, 60)
         data = self.payload()
         email, password = data.get("email"), data.get("password")
         if not isinstance(email, str) or not isinstance(password, str):
@@ -470,6 +569,12 @@ class WorkspaceAPI:
         email = email.strip().casefold()
         if not self.EMAIL.fullmatch(email) or len(email) > 254 or not 8 <= len(password) <= 128:
             abort(400, "Enter a valid email address and a password of 8–128 characters.")
+        # Failed guesses at one account from one network address are slowed down. Only failures count,
+        # and the key includes the address, so nobody can lock the owner out by guessing from elsewhere.
+        failures = f"{email}|{request.remote_addr}"
+        if not self.limiter.under(f"auth-fail:{failures}", 10, 300) and current_app.config.get("RATE_LIMITS", True):
+            abort(429, "Too many failed attempts. Wait a few minutes and try again.")
+        version = 0
         if action == "register":
             name = data.get("name", "")
             if not isinstance(name, str) or len(name.strip()) > 80:
@@ -481,10 +586,10 @@ class WorkspaceAPI:
             user = self.repository.user_by_email(email)
             matched = check_password_hash(user["password_hash"] if user else self.dummy_hash, password)
             if not matched or user is None:
+                self.limiter.allow(f"auth-fail:{failures}", 10**6, 300)  # record the failure
                 abort(401, "The email or password is incorrect.")
-            user_id = user["id"]
-        session.clear()
-        session.update(user_id=user_id, email=email)
+            user_id, version = user["id"], user["session_version"]
+        self.start_session(user_id, email, version)
         return self.session_state()
 
     def account(self):
@@ -516,12 +621,14 @@ class WorkspaceAPI:
         # Accounts created through Google have no password yet and may set one without a current password.
         if stored is None or (stored != "!" and not (isinstance(current, str) and check_password_hash(stored, current))):
             abort(400, "The current password is incorrect.")
-        self.repository.set_password(owner, generate_password_hash(password))
+        # Other browsers signed in to this account are signed out; this one stays signed in.
+        session["version"] = self.repository.set_password(owner, generate_password_hash(password))
         return jsonify(status="updated")
 
     def conversations(self):
         owner = self.owner()
         if request.method == "POST":
+            self.limit("conversation", owner, 30, 3600)
             return jsonify(self.repository.create_conversation(owner)), 201
         return jsonify(self.repository.conversations(owner))
 
@@ -562,6 +669,8 @@ class WorkspaceAPI:
         if not self.repository.has_request(owner, conversation_id, request_id):
             if conversation["revision"] >= 100:
                 abort(409, "This conversation has reached 100 questions. Start a new conversation to continue.")
+            # Each answer uses the shared OpenAlex and language model allowances, so one account is capped.
+            self.limit("turn", owner, 40, 3600)
             try:
                 resolved, answer = self.assistant.answer(question, conversation["turns"])
             except Exception:
@@ -574,6 +683,13 @@ class WorkspaceAPI:
         if result is None:
             abort(404, "Conversation not found.")
         return jsonify(result)
+
+
+def preload(encoder):
+    try:
+        encoder.load()
+    except Exception:  # The first research request will try again and report the failure to the user.
+        logging.getLogger(__name__).exception("Could not preload the ranking model")
 
 
 def create_app(config=None, repository=None, assistant=None, google=None):
@@ -589,8 +705,10 @@ def create_app(config=None, repository=None, assistant=None, google=None):
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SECURE=production,
         SESSION_COOKIE_SAMESITE="Lax",
+        PERMANENT_SESSION_LIFETIME=14 * 24 * 3600,
         MAX_CONTENT_LENGTH=12_000,
     )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     if config:
         app.config.update(config)
     if not app.config["SECRET_KEY"] or not app.config["DATABASE_URL"]:
@@ -600,7 +718,10 @@ def create_app(config=None, repository=None, assistant=None, google=None):
     repository = repository or ResearchRepository(app.config["DATABASE_URL"])
     if assistant is None:
         external = None if os.getenv("LOCAL_ONLY") == "1" else OpenAlexSource(os.getenv("OPENALEX_API_KEY"))
-        assistant = ResearchAssistant(HuggingFaceEncoder(), external, configured_writer())
+        encoder = HuggingFaceEncoder()
+        assistant = ResearchAssistant(encoder, external, configured_writer())
+        # Load the ranking model while the server starts, so the first visitor does not wait for it.
+        Thread(target=preload, args=(encoder,), daemon=True).start()
     if google is None and os.getenv("GOOGLE_CLIENT_ID") and os.getenv("GOOGLE_CLIENT_SECRET"):
         google = GoogleIdentity(os.getenv("GOOGLE_CLIENT_ID"), os.getenv("GOOGLE_CLIENT_SECRET"))
     WorkspaceAPI(repository, assistant, google).register(app)
